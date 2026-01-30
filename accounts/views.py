@@ -17,8 +17,13 @@ class RegisterView(APIView):
             email=serializer.validated_data["email"],
             password_hash=make_password(serializer.validated_data["password"]),
         )
+        access_token = UserJWTAuthentication.create_access_token(user_id=str(user.id))
         return Response(
-            {"id": str(user.id), "email": user.email},
+            {
+                "id": str(user.id),
+                "email": user.email,
+                "token": str(access_token)
+            },
             status=status.HTTP_201_CREATED,
         )
 
@@ -36,7 +41,13 @@ class LoginView(APIView):
             return Response({"detail": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
 
         access_token = UserJWTAuthentication.create_access_token(user_id=str(user.id))
-        return Response({"access": str(access_token), "user_id": str(user.id), "email": user.email})
+        return Response(
+            {
+                "token": str(access_token), 
+                "user_id": str(user.id), 
+                "email": user.email
+            }
+        )
 
 
 class LogoutView(APIView):
@@ -53,5 +64,3 @@ class DeleteAccountView(APIView):
         user: User = request.user
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-# Create your views here.
