@@ -88,6 +88,10 @@ DATABASES = {
     }
 }
 
+# MongoDB (chat sessions / metadata)
+MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://mongo:27017')
+MONGODB_DB_NAME = os.getenv('MONGODB_DB_NAME', 'mylittlelawyer')
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
