@@ -93,6 +93,11 @@ DATABASES = {
 MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://mongo:27017')
 MONGODB_DB_NAME = os.getenv('MONGODB_DB_NAME', 'mylittlelawyer')
 
+# GCP Storage (PDF forms)
+GCP_BUCKET_NAME = os.getenv('GCP_BUCKET_NAME', '')
+GCP_CREDENTIALS_JSON = os.getenv('GCP_CREDENTIALS_JSON', '')
+GCP_PROJECT_ID = os.getenv('GCP_PROJECT_ID', '')
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
