@@ -1,129 +1,120 @@
+"""WebSocket consumer for chat functionality."""
+
 import json
 import uuid
-import urllib.parse
 import asyncio
 import logging
+from typing import Optional, Dict, Any, Tuple
+
 from channels.generic.websocket import AsyncWebsocketConsumer
-from django.utils import timezone
 
-logger = logging.getLogger(__name__) 
-
-from config.mongo import get_mongo_db
 from .serializers import MessageSerializer
+from .data import ChatCollection, MessageCollection
+from .fastapi_client import FastAPIClient
+from .constants import (
+    FIELD_ID, FIELD_CHAT_ID, FIELD_MESSAGE, FIELD_RESPONSE, FIELD_FILE,
+    RESPONSE_TYPE_CHAT_CREATED, RESPONSE_OK, RESPONSE_ERRORS,
+    ERROR_INVALID_JSON, ERROR_INVALID_PAYLOAD, HTTP_OK
+)
+
+logger = logging.getLogger(__name__)
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
-    async def write(self, payload):
-        """Send a JSON payload to the client.
-
-        Ensure any Mongo ObjectId in `message["_id"]` is stringified for JSON.
-        """
-        message = payload.get("message")
-        if isinstance(message, dict) and "_id" in message:
-            m = dict(message)
-            m["_id"] = str(m["_id"])
-            payload = dict(payload)
-            payload["message"] = m
-        return await self.send(json.dumps(payload))
-
+    """WebSocket consumer for handling chat connections and messages."""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.chat_id: Optional[str] = None
+    
     async def connect(self):
-        # Chat id will be provided in the message payload; initialize empty session value
-        self.chat_id = None
+        """Handle WebSocket connection: create chat document in MongoDB."""
         await self.accept()
-        resp = {"type": "chat.created"}
-        await self.write(resp) 
-
-    async def receive(self, text_data):
-        """Handle incoming websocket messages: validate, persist, and respond.
-
-        Chat id is read from the payload's `chat_id` field. If missing, use an
-        existing session `self.chat_id` or create a new UUID and attach it to
-        the payload and session.
-        """
-        payload, err = self._parse_json_payload(text_data)
-        if err:
-            return await self.write({"errors": err})
-
-        chat_id = self._get_or_create_chat_id(payload)
-
+        try:
+            chat_doc = await ChatCollection.create_chat(user=self.scope.get("user"))
+            self.chat_id = str(chat_doc[FIELD_ID])
+            await self._send_json({
+                "type": RESPONSE_TYPE_CHAT_CREATED,
+                FIELD_CHAT_ID: self.chat_id
+            })
+        except Exception:
+            logger.exception("Failed to create chat document on connection")
+            await self._send_json({RESPONSE_ERRORS: "chat_init_failed"})
+    
+    async def receive(self, text_data: str):
+        """Handle incoming WebSocket message."""
+        payload, error = self._parse_json(text_data)
+        if error:
+            return await self._send_json({RESPONSE_ERRORS: error})
+        
+        chat_id = self._resolve_chat_id(payload)
         serializer = MessageSerializer(data=payload)
         if not serializer.is_valid():
-            logger.debug("Message validation failed: %s", serializer.errors)
-            return await self.write({"errors": serializer.errors})
-
-        v = serializer.validated_data
-        doc = self._create_message_doc(v, chat_id)
-
+            return await self._send_json({RESPONSE_ERRORS: serializer.errors})
+        
+        # Create and persist message
+        message_doc = MessageCollection.create_message_document(serializer.validated_data, chat_id)
         try:
-            inserted_id = await self._insert_message(doc)
-        except Exception as exc:
-            logger.exception("Failed to insert message into Mongo")
-            return await self.write({"errors": str(exc)})
-
-        # Ensure the message's `_id` is JSON serializable
-        doc["_id"] = str(inserted_id)
-
-        return await self.write({"ok": True, "message": doc })
-
-    async def chat_messages(self, event):
-        return await self.write({"message": event.get("message")})
-
-
-
-    def _parse_chat_id(self):
-        qs = self.scope.get("query_string", b"").decode()
-        params = urllib.parse.parse_qs(qs)
-        val = (params.get("chat") or params.get("chat_id") or params.get("chatId") or [None])[0]
-        try:
-            return uuid.UUID(val) if val else uuid.uuid4()
+            message_id = await MessageCollection.insert_message(message_doc)
         except Exception:
-            return uuid.uuid4()
-
-    def _parse_json_payload(self, text_data):
+            logger.exception("Failed to insert message")
+            return await self._send_json({RESPONSE_ERRORS: "message_insert_failed"})
+        
+        message_doc[FIELD_ID] = str(message_id)
+        
+        # Fetch history and get form data
+        history = await MessageCollection.get_chat_history(chat_id, exclude_message_id=message_id)
+        chat_history = history if history else None
+        form_data = payload.get("form")
+        
+        # Get AI response from FastAPI
+        fastapi_response = await FastAPIClient.send_chat_request(
+            new_message=message_doc,
+            chat_history=chat_history,
+            form=form_data
+        )
+        
+        if fastapi_response.status_code != HTTP_OK:
+            return await self._send_json({RESPONSE_ERRORS: fastapi_response.text})
+        
+        response_data = fastapi_response.json()
+        message_doc[FIELD_RESPONSE] = response_data
+        
+        # Handle file upload if present
+        if response_data.get(FIELD_FILE):
+            asyncio.create_task(
+                MessageCollection.upload_response_file(response_data[FIELD_FILE], message_id, chat_id)
+            )
+        
+        await self._send_json({RESPONSE_OK: True, FIELD_MESSAGE: message_doc})
+    
+    async def chat_messages(self, event):
+        """Handle channel layer events for chat messages."""
+        await self._send_json({FIELD_MESSAGE: event.get(FIELD_MESSAGE)})
+    
+    async def _send_json(self, payload: Dict[str, Any]) -> None:
+        """Send JSON payload to WebSocket client, converting ObjectIds to strings."""
+        message = payload.get(FIELD_MESSAGE)
+        if isinstance(message, dict) and FIELD_ID in message:
+            payload = {**payload, FIELD_MESSAGE: {**message, FIELD_ID: str(message[FIELD_ID])}}
+        await self.send(json.dumps(payload))
+    
+    def _parse_json(self, text_data: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """Parse JSON string and validate it's a dictionary."""
         try:
             payload = json.loads(text_data)
+            return (payload, None) if isinstance(payload, dict) else (None, ERROR_INVALID_PAYLOAD)
         except json.JSONDecodeError:
-            return None, "invalid_json"
-
-        if not isinstance(payload, dict):
-            return None, "invalid_payload"
-
-        return payload, None
-
-    def _get_or_create_chat_id(self, payload):
-        """Return chat_id from payload or session; create and persist in session when missing."""
-        chat = payload.get("chat_id")
-        if chat:
-            chat_id = str(chat)
+            return None, ERROR_INVALID_JSON
+    
+    def _resolve_chat_id(self, payload: Dict[str, Any]) -> str:
+        """Resolve chat_id from payload or use existing session chat_id."""
+        if provided_chat_id := payload.get(FIELD_CHAT_ID):
+            chat_id = str(provided_chat_id)
             self.chat_id = chat_id
-            payload["chat_id"] = chat_id
-            logger.debug("Using provided chat_id: %s", chat_id)
+            payload[FIELD_CHAT_ID] = chat_id
             return chat_id
-
-        if getattr(self, "chat_id", None):
-            payload["chat_id"] = str(self.chat_id)
-            logger.debug("Using existing session chat_id: %s", self.chat_id)
-            return str(self.chat_id)
-
-        new_chat = str(uuid.uuid4())
-        self.chat_id = new_chat
-        payload["chat_id"] = new_chat
-        logger.debug("Created new chat_id: %s", new_chat)
-        return new_chat
-
-    def _create_message_doc(self, validated_data, chat_id):
-        """Create a document ready for Mongo insertion from validated serializer data."""
-        return {
-            "chat_id": str(chat_id),
-            "role": validated_data.get("role"),
-            "content": validated_data.get("content"),
-            "created_at": timezone.now().isoformat(),
-        }
-
-    async def _insert_message(self, doc):
-        """Insert doc into Mongo in a thread and return the inserted_id."""
-        coll = get_mongo_db()["messages"]
-        logger.debug("Inserting message into Mongo for chat %s: %s", doc.get("chat_id"), doc)
-        message_result = await asyncio.to_thread(coll.insert_one, doc)
-        logger.debug("Inserted message with _id=%s", message_result.inserted_id)
-        return message_result.inserted_id
+        if self.chat_id:
+            payload[FIELD_CHAT_ID] = self.chat_id
+            return self.chat_id
+        return self.chat_id or str(uuid.uuid4())
