@@ -7,6 +7,7 @@ MESSAGES_COLLECTION = "messages"
 # FastAPI Configuration
 FASTAPI_CHAT_ENDPOINT = "http://localhost:8000/ai/chat"
 FASTAPI_FORM_ENDPOINT = "http://localhost:8000/ai/file"
+FASTAPI_CONSULTANT_ENDPOINT = "http://localhost:8000/ai/consultant"
 FASTAPI_TIMEOUT = 30.0
 
 # Chat Status
@@ -31,7 +32,7 @@ FIELD_FORM = "form"
 
 # FastAPI Payload Fields
 FIELD_SESSION_ID = "session_id"
-FIELD_NEW_MESSAGE = "new_message"
+FIELD_MESSAGE = "message"
 FIELD_CHAT_HISTORY = "chat_history"
 FIELD_FORM = "form"
 

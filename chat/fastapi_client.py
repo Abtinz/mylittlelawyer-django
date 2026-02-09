@@ -9,6 +9,7 @@ from django.conf import settings
 from .constants import (
     FASTAPI_TIMEOUT,
     FIELD_CHAT_ID,
+    FIELD_MESSAGE,
     FIELD_NEW_MESSAGE, FIELD_CHAT_HISTORY, FIELD_FORM,
     FIELD_SESSION_ID,
     HTTP_ERROR
@@ -34,7 +35,7 @@ class FastAPIClient:
     @staticmethod
     async def send_chat_request(
         endpoint: str,
-        new_message: Dict[str, Any], 
+        message: str, 
         session_id: str,
         chat_history: Optional[List[Dict[str, Any]]] = None,
         # form: Optional[Dict[str, Any]] = None
@@ -43,7 +44,7 @@ class FastAPIClient:
         Send message and chat history to FastAPI service and get AI response.
         
         Args:
-            new_message: Current message document
+            message: Current message document
             chat_history: List of previous messages (optional)
             form: Form data (optional)
             
@@ -52,7 +53,7 @@ class FastAPIClient:
         """
         payload = {
             FIELD_SESSION_ID: session_id,
-            FIELD_NEW_MESSAGE: new_message,
+            FIELD_MESSAGE: message,
             FIELD_CHAT_HISTORY: chat_history if chat_history else None,
             # FIELD_FORM: form
         }

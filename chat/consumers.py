@@ -13,6 +13,7 @@ from .data import ChatCollection, MessageCollection
 from .fastapi_client import FastAPIClient
 from .constants import (
     FASTAPI_CHAT_ENDPOINT,
+    FASTAPI_CONSULTANT_ENDPOINT,
     # FASTAPI_FORM_ENDPOINT,
     # FIELD_FORM,
     RESPONSE_TYPE_CHAT_CREATED, RESPONSE_OK, RESPONSE_ERRORS,
@@ -75,20 +76,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         # Get AI response from FastAPI
         fastapi_response = await FastAPIClient.send_chat_request(
-            endpoint=FASTAPI_CHAT_ENDPOINT,
-            new_message=new_message,
+            endpoint=FASTAPI_CONSULTANT_ENDPOINT,
+            message=new_message,
             chat_history=chat_history,
-            session_id=session_id,
+            refresh_index=True
             # form=form_data
         )
 
         print(f"FastAPI raw response: {fastapi_response}")
         
         if fastapi_response.status_code != HTTP_OK:
-             print(f"FastAPI error: {fastapi_response.status_code} - {fastapi_response.text}")
              return await self._send_json({RESPONSE_ERRORS: fastapi_response})
-
-        print(f"FastAPI response: {fastapi_response.json()}")
 
         # Create and persist message from the FastAPI response
         message_doc = MessageCollection.create_message_document(fastapi_response.json(), chat_id)
