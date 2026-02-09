@@ -32,7 +32,7 @@ FIELD_FORM = "form"
 
 # FastAPI Payload Fields
 FIELD_SESSION_ID = "session_id"
-FIELD_MESSAGE = "message"
+FIELD_MESSAGE = "message" 
 FIELD_CHAT_HISTORY = "chat_history"
 FIELD_FORM = "form"
 
