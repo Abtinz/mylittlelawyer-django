@@ -76,12 +76,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
             endpoint=FASTAPI_CHAT_ENDPOINT,
             new_message=message_doc,
             chat_history=chat_history,
+            session_id=chat_id
             # form=form_data
         )
         
         if fastapi_response.status_code != HTTP_OK:
-            print(f"FastAPI error: {fastapi_response.status_code} - {fastapi_response.text}")
-            return await self._send_json({RESPONSE_ERRORS: fastapi_response})
+             print(f"FastAPI error: {fastapi_response.status_code} - {fastapi_response.text}")
+             return await self._send_json({RESPONSE_ERRORS: fastapi_response})
 
         # Create and persist message from the FastAPI response
         message_doc = MessageCollection.create_message_document(fastapi_response.json(), chat_id)
@@ -90,7 +91,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         except Exception:
             logger.exception("Failed to insert message")
             return await self._send_json({RESPONSE_ERRORS: "message_insert_failed"})    
-        
+       
         response_data = fastapi_response.json()
         message_doc[FIELD_RESPONSE] = response_data
         
