@@ -8,7 +8,9 @@ from django.conf import settings
 
 from .constants import (
     FASTAPI_TIMEOUT,
+    FIELD_CHAT_ID,
     FIELD_NEW_MESSAGE, FIELD_CHAT_HISTORY, FIELD_FORM,
+    FIELD_SESSION_ID,
     HTTP_ERROR
 )
 
@@ -33,6 +35,7 @@ class FastAPIClient:
     async def send_chat_request(
         endpoint: str,
         new_message: Dict[str, Any], 
+        session_id: str,
         chat_history: Optional[List[Dict[str, Any]]] = None,
         # form: Optional[Dict[str, Any]] = None
     ) -> httpx.Response:
@@ -48,13 +51,12 @@ class FastAPIClient:
             httpx.Response object (or ErrorResponse mock on failure)
         """
         payload = {
+            FIELD_SESSION_ID: session_id,
             FIELD_NEW_MESSAGE: new_message,
             FIELD_CHAT_HISTORY: chat_history if chat_history else None,
             # FIELD_FORM: form
         }
 
-        print(f'hello from {endpoint}')
-        
         try:
             async with httpx.AsyncClient(timeout=FASTAPI_TIMEOUT) as client:
                 return await client.post(endpoint, json=payload)
