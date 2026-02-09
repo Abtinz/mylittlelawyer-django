@@ -69,20 +69,26 @@ class ChatConsumer(AsyncWebsocketConsumer):
         # Fetch history and get form data
         history = await MessageCollection.get_chat_history(chat_id, exclude_message_id=message_id)
         chat_history = history if history else None
+        session_id = chat_id
+        new_message = message_doc["content"]
         # form_data = payload.get("form")
-        
+
         # Get AI response from FastAPI
         fastapi_response = await FastAPIClient.send_chat_request(
             endpoint=FASTAPI_CHAT_ENDPOINT,
-            new_message=message_doc,
+            new_message=new_message,
             chat_history=chat_history,
-            session_id=chat_id
+            session_id=session_id,
             # form=form_data
         )
+
+        print(f"FastAPI raw response: {fastapi_response}")
         
         if fastapi_response.status_code != HTTP_OK:
              print(f"FastAPI error: {fastapi_response.status_code} - {fastapi_response.text}")
              return await self._send_json({RESPONSE_ERRORS: fastapi_response})
+
+        print(f"FastAPI response: {fastapi_response.json()}")
 
         # Create and persist message from the FastAPI response
         message_doc = MessageCollection.create_message_document(fastapi_response.json(), chat_id)

@@ -30,6 +30,7 @@ FIELD_FILENAME = "filename"
 FIELD_FORM = "form"
 
 # FastAPI Payload Fields
+FIELD_SESSION_ID = "session_id"
 FIELD_NEW_MESSAGE = "new_message"
 FIELD_CHAT_HISTORY = "chat_history"
 FIELD_FORM = "form"
